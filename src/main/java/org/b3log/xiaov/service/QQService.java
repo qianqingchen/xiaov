@@ -17,6 +17,8 @@ package org.b3log.xiaov.service;
 
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,11 +84,17 @@ public class QQService {
     private static final String QQ_BOT_TYPE = XiaoVs.getString("qq.bot.type");
     
     private static final String QQ_BOT_NAME = XiaoVs.getString("qq.bot.name");
-
+    
+    //是否强制回复
+    private static final String IS_FORCE_ANSWER = XiaoVs.getString("qq.bot.isForceAnswer");
+    
+    private static final String defaultGroupsConf = XiaoVs.getString("qq.bot.pushGroups");
     /**
      * URL fetch service.
      */
     private static final URLFetchService URL_FETCH_SVC = URLFetchServiceFactory.getURLFetchService();
+    
+    private List<String> groupNames = new ArrayList<String>();
 
     /**
      * Initializes QQ client.
@@ -109,15 +117,19 @@ public class QQService {
                         LOGGER.info("Received admin message: " + msg);
                         sendToQQGroups(msg);
                     }
-
+                    
                     @Override
                     public void onGroupMessage(final GroupMessage message) {
                         final long groupId = message.getGroupId();
-
                         if (QQ_GROUPS.isEmpty()) {
                             return;
                         }
-
+                        if (QQ_GROUPS.get(groupId) == null) {
+                        	return;
+                        }
+                        if (!groupNames.contains(QQ_GROUPS.get(groupId).getName())) {
+                        	return;
+                        }
                         final String content = message.getContent();
 
                         // Push to forum
@@ -134,9 +146,12 @@ public class QQService {
                             msg = answer(content);
                             LOGGER.info(content + ": " + msg);
                         }
-
+                        else if (StringUtils.length(content) > 0 && "1".equals(IS_FORCE_ANSWER)){
+                        	msg = answerWithoutName(QQ_BOT_NAME + content);
+                            LOGGER.info(content + ": " + msg);
+                        }
                         if (StringUtils.isNotBlank(msg)) {
-                            sendMessageToGroup(groupId, msg);
+                        	sendMessageToGroup(groupId, msg);
                         }
                     }
 
@@ -157,11 +172,34 @@ public class QQService {
                             ret = turingQueryService.chat("Vanessa", content);
                         }
                         else if (StringUtils.contains(content, QQ_BOT_NAME) && QQ_BOT_TYPE.equals("2")) {
-                        	ret = baiduQueryService.chat(content);
+                        	ret = baiduQueryService.chat(content.replace(QQ_BOT_NAME, "小度"));
                         }
                         return ret;
                     }
-
+                    
+                    //强制回复，不需要输入机器人名
+                    private String answerWithoutName(final String content) {
+                        String keyword = "";
+                        String[] keywords = StringUtils.split(XiaoVs.getString("bot.follow.keywords"), ",");
+                        keywords = Strings.trimAll(keywords);
+                        for (final String kw : keywords) {
+                            if (StringUtils.containsIgnoreCase(content, kw)) {
+                                keyword = kw;
+                                break;
+                            }
+                        }
+                        String ret = "";
+                        if (StringUtils.isNotBlank(keyword)) {
+                                ret = "我好像迷路了！";
+                        } else if (StringUtils.contains(content, QQ_BOT_NAME) && QQ_BOT_TYPE.equals("1")) {
+                            ret = turingQueryService.chat("Vanessa", content.substring(QQ_BOT_NAME.length()));
+                        }
+                        else if (StringUtils.contains(content, QQ_BOT_NAME) && QQ_BOT_TYPE.equals("2")) {
+                        	ret = baiduQueryService.chat(content.substring(QQ_BOT_NAME.length()));
+                        }
+                        return ret;
+                    }
+                    
                     @Override
                     public void onDiscussMessage(final DiscussMessage message) {
                     }
@@ -224,11 +262,29 @@ public class QQService {
      * @param msg the specified message
      */
     public void sendToPushQQGroups(final String msg) {
-        final String defaultGroupsConf = XiaoVs.getString("qq.bot.pushGroups");
         if (StringUtils.isBlank(defaultGroupsConf)) {
             return;
         }
+        final String[] groups = defaultGroupsConf.split(",");
+        for (final Map.Entry<Long, Group> entry : QQ_GROUPS.entrySet()) {
+            final Group group = entry.getValue();
+            final String name = group.getName();
 
+            if (Strings.contains(name, groups)) {
+                sendMessageToGroup(group.getId(), msg);
+            }
+        }
+    }
+    
+    /**
+     * Sends the specified article to QQ groups.
+     *
+     * @param msg the specified message
+     */
+    public void sendToPushQQGroups(final Long groupId, final String msg) {
+        if (StringUtils.isBlank(defaultGroupsConf)) {
+            return;
+        }
         final String[] groups = defaultGroupsConf.split(",");
         for (final Map.Entry<Long, Group> entry : QQ_GROUPS.entrySet()) {
             final Group group = entry.getValue();
@@ -266,4 +322,12 @@ public class QQService {
         LOGGER.info("Pushing [msg=" + msg + "] to QQ qun [" + group.getName() + "]");
         qqClient.sendMessageToGroup(groupId, msg);
     }
+
+	public QQService() {
+		if (!StringUtils.isBlank(defaultGroupsConf)) {
+			String[] groups = defaultGroupsConf.split(",");
+			groupNames = Arrays.asList(groups);
+        }
+	}
+    
 }

@@ -83,7 +83,6 @@ public class BaiduQueryService {
     	if (msg.startsWith(QQ_BOT_NAME)){
     		msg = msg.replace(QQ_BOT_NAME, "");
     	}
-    	LOGGER.info("百度：" + msg);
         request = new HTTPRequest();
         request.setRequestMethod(HTTPRequestMethod.POST);
         try {
